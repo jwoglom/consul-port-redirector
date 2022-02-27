@@ -33,6 +33,7 @@ func runServer() error {
 	}
 
 	http.Handle("/", s)
+	log.Printf("listening on port :%d", *port)
 	return http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
 }
 
@@ -57,7 +58,7 @@ func NewServer() (*Server, error) {
 // which ports exist to redirect to.
 func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 	hostname := getHostname(req)
-	log.Printf("request: %s%s\n", req.Host, req.URL.Path)
+	log.Printf("request: %s%s", req.Host, req.URL.Path)
 
 	if !strings.HasSuffix(hostname, ".service.consul") {
 		res.WriteHeader(404)
@@ -163,7 +164,7 @@ func (s *Server) queryConsulSRV(ctx context.Context, hostname string) ([]Redirec
 	}
 
 	for _, svc := range services {
-		log.Printf("%s port %d: %#v\n", svc.Address, svc.ServicePort, *svc)
+		log.Printf("%s port %d: %#v", svc.Address, svc.ServicePort, *svc)
 
 		options = append(options, RedirectOption{
 			Hostname: svc.Node,
