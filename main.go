@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+
+	"github.com/hashicorp/consul/api"
 )
 
 var (
@@ -27,7 +29,10 @@ func main() {
 }
 
 func runServer() error {
-	s := NewServer(*consulDnsAddr)
+	s, err := NewServer(*consulDnsAddr)
+	if err != nil {
+		return err
+	}
 
 	http.Handle("/", s)
 	return http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
@@ -37,21 +42,30 @@ func runServer() error {
 // with a redirect to the correct port of the Consul service
 type Server struct {
 	resolver *net.Resolver
+	consul *api.Client
 }
 
-func NewServer(consulDnsAddr string) *Server {
-	if consulDnsAddr == "" {
-		return &Server{
-			resolver: net.DefaultResolver,
-		}
+func NewServer(consulDnsAddr string) (*Server, error) {
+	client, err := api.NewClient(api.DefaultConfig())
+	if err != nil {
+		return nil, err
 	}
 
 	return &Server{
-		resolver: &net.Resolver{
-			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-				dialer := &net.Dialer{}
-				return dialer.DialContext(ctx, network, consulDnsAddr)
-			},
+		consul: client,
+		resolver: buildDnsResolver(consulDnsAddr),
+	}, nil
+}
+
+func buildDnsResolver(consulDnsAddr string) *net.Resolver {
+	if consulDnsAddr == "" {
+		return net.DefaultResolver
+	}
+
+	return &net.Resolver{
+		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			dialer := &net.Dialer{}
+			return dialer.DialContext(ctx, network, consulDnsAddr)
 		},
 	}
 }
@@ -87,6 +101,12 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 		return
 	}
 
+	if len(result) == 0 {
+		res.WriteHeader(404)
+		_, _ = res.Write([]byte(fmt.Sprintf("Couldn't process hostname %s", hostname)))
+		return
+	}
+
 	res.WriteHeader(200)
 	_, _ = res.Write([]byte(fmt.Sprintf("<ul>")))
 	for _, option := range result {
@@ -99,10 +119,10 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 		_, _ = res.Write([]byte(fmt.Sprintf(`
 <li>
 	<a href="%s">
-		%s port %d
+		%s port %d (%s)
 	</a>
 </li>
-		`, u, strings.Join(option.Targets, ", "), option.Port)))
+		`, u, option.Hostname, option.Port, strings.Join(option.Tags, ", "))))
 	}
 
 	_, _ = res.Write([]byte(fmt.Sprintf("</ul>")))
@@ -112,7 +132,7 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 // RedirectOption corresponds to a Consul service+port pair which can be redirected to
 type RedirectOption struct {
 	Hostname string
-	Targets []string
+	Tags []string
 	Port uint16
 }
 
@@ -132,8 +152,34 @@ func (r *RedirectOption) BuildURL(hostname string, origUrl *url.URL) (*url.URL, 
 func (s *Server) queryConsulSRV(ctx context.Context, hostname string) ([]RedirectOption, error) {
 	var options []RedirectOption
 
-	svcName := strings.TrimSuffix(hostname, ".service.consul")
-	svcType := "tcp"
+	svcName, svcType := parseConsulAddress(hostname)
+
+	services, _, err := s.consul.Catalog().Service(svcName, svcType, &api.QueryOptions{})
+	if err != nil {
+		return options, err
+	}
+
+	for _, svc := range services {
+		log.Printf("%s port %d: %#v\n", svc.Address, svc.ServicePort, *svc)
+
+		options = append(options, RedirectOption{
+			Hostname: svc.Node,
+			Tags: svc.ServiceTags,
+			Port: uint16(svc.ServicePort),
+		})
+	}
+
+	// sort lowest -> highest port number for each hostname
+	sort.Slice(options, func(i, j int) bool {
+		return options[i].Hostname < options[j].Hostname && options[i].Port < options[j].Port
+	})
+
+	return options, nil
+}
+
+func parseConsulAddress(hostname string) (svcName, svcType string) {
+	svcName = strings.TrimSuffix(hostname, ".service.consul")
+	svcType = ""
 
 	if strings.Contains(svcName, ".") {
 		parts := strings.SplitN(svcName, ".", 2)
@@ -141,58 +187,7 @@ func (s *Server) queryConsulSRV(ctx context.Context, hostname string) ([]Redirec
 		svcName = parts[1]
 	}
 
-	_, addrs, err := s.resolver.LookupSRV(ctx, svcName, svcType, "service.consul")
-
-	if err != nil {
-		return options, err
-	}
-
-	for _, srv := range addrs {
-		targets, err := s.queryConsulTargets(ctx, srv.Target)
-		if err != nil {
-			return options, err
-		}
-
-		log.Printf("%s port %d\n", targets, srv.Port)
-		options = append(options, RedirectOption{
-			Hostname: hostname,
-			Targets: targets,
-			Port: srv.Port,
-		})
-	}
-
-	// sort lowest -> highest port number
-	sort.Slice(options, func(i, j int) bool {
-		return options[i].Port < options[j].Port
-	})
-
-	return options, nil
-}
-
-func (s *Server) queryConsulTargets(ctx context.Context, target string) ([]string, error) {
-	var targets []string
-
-	// query for IP address from the consul resolver
-	addrs, err := s.resolver.LookupIPAddr(ctx, target)
-	if err != nil {
-		return targets, err
-	}
-
-	for _, ip := range addrs {
-		// query for reverse dns from the system dns resolver,
-		// not the consul resolver
-		rev, err := net.LookupAddr(ip.String())
-		if err != nil {
-			return targets, err
-		}
-		if len(rev) == 0 {
-			continue
-		}
-
-		targets = append(targets, strings.TrimSuffix(rev[0], "."))
-	}
-
-	return targets, nil
+	return svcName, svcType
 }
 
 func getHostname(req *http.Request) string {
