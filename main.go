@@ -61,8 +61,8 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 	log.Printf("request: %s%s", req.Host, req.URL.Path)
 
 	if !strings.HasSuffix(hostname, ".service.consul") {
-		res.WriteHeader(404)
-		_, _ = res.Write([]byte(fmt.Sprintf("unable to parse hostname as .service.consul address: %s", hostname)))
+		res.Header().Set("Content-Type", "text/html")
+		http.Error(res, fmt.Sprintf("unable to parse hostname as .service.consul address: %s", hostname), 404)
 		return
 	}
 
@@ -86,14 +86,11 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 	}
 
 	if len(result) == 0 {
-		res.WriteHeader(404)
 		res.Header().Set("Content-Type", "text/html")
-
-		_, _ = res.Write([]byte(fmt.Sprintf("No results found for hostname %s", hostname)))
+		http.Error(res, fmt.Sprintf("No results found for hostname %s", hostname), 404)
 		return
 	}
 
-	res.WriteHeader(200)
 	res.Header().Set("Content-Type", "text/html")
 
 	_, _ = res.Write([]byte(fmt.Sprintf("<ul>")))
