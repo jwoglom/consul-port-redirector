@@ -86,11 +86,15 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 
 	if len(result) == 0 {
 		res.WriteHeader(404)
-		_, _ = res.Write([]byte(fmt.Sprintf("Couldn't process hostname %s", hostname)))
+		res.Header().Set("Content-Type", "text/html")
+
+		_, _ = res.Write([]byte(fmt.Sprintf("No results found for hostname %s", hostname)))
 		return
 	}
 
 	res.WriteHeader(200)
+	res.Header().Set("Content-Type", "text/html")
+
 	_, _ = res.Write([]byte(fmt.Sprintf("<ul>")))
 	for _, option := range result {
 		u, err := option.BuildURL(hostname, req.URL)
@@ -99,13 +103,17 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 			return
 		}
 
+		tags := strings.Join(option.Tags, ", ")
+		if len(tags) > 0 {
+			tags = " ("+tags+")"
+		}
 		_, _ = res.Write([]byte(fmt.Sprintf(`
 <li>
 	<a href="%s">
-		%s port %d (%s)
+		%s port %d%s
 	</a>
 </li>
-		`, u, option.Hostname, option.Port, strings.Join(option.Tags, ", "))))
+		`, u, option.Hostname, option.Port, tags)))
 	}
 
 	_, _ = res.Write([]byte(fmt.Sprintf("</ul>")))
@@ -126,10 +134,22 @@ func (r *RedirectOption) BuildURL(hostname string, origUrl *url.URL) (*url.URL, 
 		return nil, err
 	}
 
-	u.Scheme = "http"
+	u.Scheme = r.guessScheme()
 	u.Host = fmt.Sprintf("%s:%d", hostname, r.Port)
 
 	return u, nil
+}
+
+func (r *RedirectOption) guessScheme() string {
+	for _, tag := range r.Tags {
+		switch strings.ToLower(tag) {
+		case "http":
+			return "http"
+		case "https":
+			return "https"
+		}
+	}
+	return "http"
 }
 
 func (s *Server) queryConsulSRV(ctx context.Context, hostname string) ([]RedirectOption, error) {
