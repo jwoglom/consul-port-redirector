@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -16,7 +15,6 @@ import (
 
 var (
 	port = flag.Uint("port", 80, "http port")
-	consulDnsAddr = flag.String("consulDnsAddr", "", "consul DNS server address. if empty, uses the default system DNS resolver")
 )
 
 func main() {
@@ -29,7 +27,7 @@ func main() {
 }
 
 func runServer() error {
-	s, err := NewServer(*consulDnsAddr)
+	s, err := NewServer()
 	if err != nil {
 		return err
 	}
@@ -41,11 +39,10 @@ func runServer() error {
 // Server implements a http.Handler to serve HTTP requests
 // with a redirect to the correct port of the Consul service
 type Server struct {
-	resolver *net.Resolver
 	consul *api.Client
 }
 
-func NewServer(consulDnsAddr string) (*Server, error) {
+func NewServer() (*Server, error) {
 	client, err := api.NewClient(api.DefaultConfig())
 	if err != nil {
 		return nil, err
@@ -53,21 +50,7 @@ func NewServer(consulDnsAddr string) (*Server, error) {
 
 	return &Server{
 		consul: client,
-		resolver: buildDnsResolver(consulDnsAddr),
 	}, nil
-}
-
-func buildDnsResolver(consulDnsAddr string) *net.Resolver {
-	if consulDnsAddr == "" {
-		return net.DefaultResolver
-	}
-
-	return &net.Resolver{
-		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			dialer := &net.Dialer{}
-			return dialer.DialContext(ctx, network, consulDnsAddr)
-		},
-	}
 }
 
 // ServeHTTP redirects to the requested port, or provides a list of
