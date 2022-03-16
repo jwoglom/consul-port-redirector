@@ -14,7 +14,9 @@ import (
 )
 
 var (
-	port = flag.Uint("port", 80, "http port")
+	port             = flag.Uint("port", 80, "http port")
+	nomadUIHostname  = flag.String("nomadUIHostname", "", "the hostname to link to for viewing the Nomad UI")
+	consulUIHostname = flag.String("consulUIHostname", "", "the hostname to link to for viewing the Consul UI")
 )
 
 func main() {
@@ -56,19 +58,26 @@ func NewServer() (*Server, error) {
 
 // ServeHTTP redirects to the requested port, or provides a list of
 // which ports exist to redirect to.
-func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
+func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	hostname := getHostname(req)
 	log.Printf("request: %s%s", req.Host, req.URL.Path)
 
 	if !strings.HasSuffix(hostname, ".service.consul") {
+		log.Printf("unable to parse hostname as .service.consul address: %s", hostname)
+
 		res.Header().Set("Content-Type", "text/html")
-		http.Error(res, fmt.Sprintf("unable to parse hostname as .service.consul address: %s", hostname), 404)
+		_, _ = res.Write([]byte(fmt.Sprintf(`
+<p>No .service.consul address found for <code>%s</code></p>
+		`, hostname)))
+
+		s.printQuickLinks(res, hostname)
 		return
 	}
 
-	result, err := s.queryConsulSRV(context.Background(), hostname)
+	result, err := s.queryConsulForHostname(context.Background(), hostname)
 	if err != nil {
-		log.Printf("error querying %s: %#v", hostname, err)
+		log.Printf("error querying Consul for %s: %#v", hostname, err)
+		http.Error(res, fmt.Sprintf("error querying Consul for %s: %#v", hostname, err), http.StatusInternalServerError)
 		return
 	}
 
@@ -76,24 +85,29 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 		u, err := result[0].BuildURL(hostname, req.URL)
 		if err != nil {
 			log.Printf("error building URL for %s: %#v", hostname, err)
+			http.Error(res, fmt.Sprintf("<p>error building URL for %s: %#v</p>", hostname, err), http.StatusInternalServerError)
 			return
 		}
 
 		log.Printf("redirecting to %s", u.String())
 
-		http.Redirect(res, req, u.String(), 307)
+		http.Redirect(res, req, u.String(), http.StatusTemporaryRedirect)
 		return
 	}
 
 	if len(result) == 0 {
 		res.Header().Set("Content-Type", "text/html")
-		http.Error(res, fmt.Sprintf("No results found for hostname %s", hostname), 404)
+		http.Error(res, fmt.Sprintf("<p>No results found for hostname %s</p>", hostname), 404)
+		s.printQuickLinks(res, hostname)
 		return
 	}
 
 	res.Header().Set("Content-Type", "text/html")
 
-	_, _ = res.Write([]byte(fmt.Sprintf("<ul>")))
+	_, _ = res.Write([]byte(fmt.Sprintf(`
+<p>Service ports found for <code>%s</code>:</p><ul>
+	`, hostname)))
+
 	for _, option := range result {
 		u, err := option.BuildURL(hostname, req.URL)
 		if err != nil {
@@ -103,7 +117,7 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 
 		tags := strings.Join(option.Tags, ", ")
 		if len(tags) > 0 {
-			tags = " ("+tags+")"
+			tags = " (" + tags + ")"
 		}
 		_, _ = res.Write([]byte(fmt.Sprintf(`
 <li>
@@ -114,15 +128,35 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request)  {
 		`, u, option.Hostname, option.Port, tags)))
 	}
 
-	_, _ = res.Write([]byte(fmt.Sprintf("</ul>")))
+	_, _ = res.Write([]byte("</ul>"))
 
+}
+
+func (s *Server) printQuickLinks(res http.ResponseWriter, hostname string) {
+	nomadHost := hostname
+	consulHost := hostname
+
+	if len(*nomadUIHostname) > 0 {
+		nomadHost = *nomadUIHostname
+	}
+	if len(*consulUIHostname) > 0 {
+		consulHost = *consulUIHostname
+	}
+
+	_, _ = res.Write([]byte(fmt.Sprintf(`
+<p>Quick links:</p>
+<ul>
+<li><a href="http://%s:4646/ui/">Nomad UI</a></li>
+<li><a href="http://%s:8500/ui/">Consul UI</a></li>
+</ul>
+	`, nomadHost, consulHost)))
 }
 
 // RedirectOption corresponds to a Consul service+port pair which can be redirected to
 type RedirectOption struct {
 	Hostname string
-	Tags []string
-	Port uint16
+	Tags     []string
+	Port     uint16
 }
 
 // BuildURL replaces the port in the given URL
@@ -150,7 +184,7 @@ func (r *RedirectOption) guessScheme() string {
 	return "http"
 }
 
-func (s *Server) queryConsulSRV(ctx context.Context, hostname string) ([]RedirectOption, error) {
+func (s *Server) queryConsulForHostname(ctx context.Context, hostname string) ([]RedirectOption, error) {
 	var options []RedirectOption
 
 	svcName, svcType := parseConsulAddress(hostname)
@@ -165,8 +199,8 @@ func (s *Server) queryConsulSRV(ctx context.Context, hostname string) ([]Redirec
 
 		options = append(options, RedirectOption{
 			Hostname: svc.Node,
-			Tags: svc.ServiceTags,
-			Port: uint16(svc.ServicePort),
+			Tags:     svc.ServiceTags,
+			Port:     uint16(svc.ServicePort),
 		})
 	}
 
