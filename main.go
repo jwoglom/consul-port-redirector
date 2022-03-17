@@ -61,9 +61,17 @@ func NewServer() (*Server, error) {
 // which ports exist to redirect to.
 func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	// Allow for health checks at /healthy and /healthz
-	if strings.HasPrefix(req.URL.Path, "/health") {
+	if strings.HasPrefix(strings.TrimPrefix(req.URL.Path, "/"), "health") {
 		res.WriteHeader(200)
 		_, _ = res.Write([]byte("ok"))
+		log.Printf("responded to health check for host: %s path: %s", req.Host, req.URL.Path)
+
+		return
+	}
+
+	// No prometheus metrics (yet)
+	if strings.HasPrefix(strings.TrimPrefix(req.URL.Path, "/"), "metrics") {
+		res.WriteHeader(200)
 		return
 	}
 
