@@ -17,6 +17,13 @@ job "port-redirector" {
             config {
                 image = "jwoglom/consul-port-redirector"
                 ports = ["http"]
+
+                command = "main"
+                
+                # Add arguments here, if necessary
+                args = [
+
+                ]
             }
 
             env {
@@ -26,6 +33,24 @@ job "port-redirector" {
             resources {
                 cpu = 50
                 memory = 64
+            }
+        }
+    }
+
+    service {
+        name = "port-redirector"
+        port = "http"
+
+        check {
+            type = "http"
+
+            path = "/healthy"
+            interval = "10s"
+            timeout = "2s"
+
+            check_restart {
+                limit = 5
+                grace = "10s"
             }
         }
     }

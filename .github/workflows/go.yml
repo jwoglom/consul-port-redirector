@@ -22,10 +22,10 @@ jobs:
       run: go test -v ./...
 
     - name: Build linux64
-      run: GOOS=linux GOARCH=amd64 go build -v ./... -o consul-port-redirector-linux-amd64
+      run: GOOS=linux GOARCH=amd64 go build -o consul-port-redirector-linux-amd64 -v ./...
 
     - name: Build darwin64
-      run: GOOS=darwin GOARCH=amd64 go build -v ./... -o consul-port-redirector-darwin-amd64
+      run: GOOS=darwin GOARCH=amd64 go build -o consul-port-redirector-darwin-amd64 -v ./...
 
     - uses: actions/upload-artifact@v3
       with:
