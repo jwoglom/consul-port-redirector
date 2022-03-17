@@ -14,10 +14,11 @@ import (
 )
 
 var (
-	port                          = flag.Uint("port", 80, "http port")
-	nomadUIHostname               = flag.String("nomadUIHostname", "", "the hostname to link to for viewing the Nomad UI")
-	consulUIHostname              = flag.String("consulUIHostname", "", "the hostname to link to for viewing the Consul UI")
-	redirectToNomadHostnameSuffix = flag.String("redirectToNomadHostnameSuffix", "", "the hostname suffix for which to redirect to the Nomad UI")
+	port              = flag.Uint("port", 80, "http port")
+	nomadUIHostname   = flag.String("nomadUIHostname", "", "the hostname to link to for viewing the Nomad UI")
+	consulUIHostname  = flag.String("consulUIHostname", "", "the hostname to link to for viewing the Consul UI")
+	redirectToNomadUI = flag.Bool("redirectToNomadUI", false, "if true, redirects to the nomad UI when provided a hostname with hostnameSuffix")
+	hostnameSuffix    = flag.String("hostnameSuffix", "", "the hostname suffix for nodes in the cluster")
 )
 
 func main() {
@@ -78,7 +79,7 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	hostname := getHostname(req)
 	log.Printf("request: %s%s", req.Host, req.URL.Path)
 
-	if len(*redirectToNomadHostnameSuffix) > 0 && strings.HasSuffix(hostname, *redirectToNomadHostnameSuffix) {
+	if *redirectToNomadUI && strings.HasSuffix(hostname, *hostnameSuffix) {
 		redirUrl, err := buildUrlWithPort(hostname, req.URL, "http", 4646)
 
 		if redirUrl.Path == "" || redirUrl.Path == "/" {
@@ -102,13 +103,14 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 	svcName, svcType := parseConsulAddress(hostname)
 	if svcName == "" {
-		log.Printf("unable to parse hostname as .service.consul address: %s", hostname)
+		log.Printf("unable to parse hostname as a Consul service address: %s", hostname)
 
 		res.Header().Set("Content-Type", "text/html")
 		_, _ = res.Write([]byte(fmt.Sprintf(`
-<p>No .service.consul address found for <code>%s</code></p>
+<p>Could not parse hostname <code>%s</code> as a Consul service address</p>
 		`, hostname)))
 
+		s.printHostnameTips(res)
 		s.printQuickLinks(res, hostname)
 		return
 	}
@@ -124,12 +126,13 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	}
 
 	if len(result) == 1 {
-		u, err := result[0].BuildURL(hostname, req.URL)
+		fullHostname := addHostnameSuffix(hostname)
+		u, err := result[0].BuildURL(fullHostname, req.URL)
 		if err != nil {
 			log.Printf("error building URL for %s: %#v", hostname, err)
 			http.Error(res, fmt.Sprintf(`
 <p>error building URL for %s: %#v</p>
-			`, hostname, err), http.StatusInternalServerError)
+			`, fullHostname, err), http.StatusInternalServerError)
 
 			return
 		}
@@ -140,17 +143,19 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	portTypeSuffix := ""
+	if len(svcType) > 0 {
+		portTypeSuffix = fmt.Sprintf(" and port type <code>%s</code>", svcType)
+	}
+
 	if len(result) == 0 {
 		res.Header().Set("Content-Type", "text/html")
-		suffix := ""
-		if len(svcType) > 0 {
-			suffix = fmt.Sprintf(" and port type <code>%s</code>", svcType)
-		}
 
 		http.Error(res, fmt.Sprintf(`
-<p>No results found for service <code>%s</code>%s</p>
-		`, svcName, suffix), 404)
+<p>No results found for service <code>%s</code>%s in Consul</p>
+		`, svcName, portTypeSuffix), 404)
 
+		s.printHostnameTips(res)
 		s.printQuickLinks(res, hostname)
 		return
 	}
@@ -158,11 +163,12 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	res.Header().Set("Content-Type", "text/html")
 
 	_, _ = res.Write([]byte(fmt.Sprintf(`
-<p>Service ports found for <code>%s</code>:</p><ul>
-	`, hostname)))
+<p>Consul service ports found for service <code>%s</code>%s:</p><ul>
+	`, svcName, portTypeSuffix)))
 
 	for _, option := range result {
-		u, err := option.BuildURL(hostname, req.URL)
+		fullHostname := addHostnameSuffix(option.Hostname)
+		u, err := option.BuildURL(fullHostname, req.URL)
 		if err != nil {
 			log.Printf("error building URL for %s: %#v", hostname, err)
 			return
@@ -178,11 +184,23 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		%s port %d%s
 	</a>
 </li>
-		`, u, option.Hostname, option.Port, tags)))
+		`, u, fullHostname, option.Port, tags)))
 	}
 
 	_, _ = res.Write([]byte("</ul><br />"))
 	s.printQuickLinks(res, hostname)
+}
+
+func (s *Server) printHostnameTips(res http.ResponseWriter) {
+	_, _ = res.Write([]byte(`
+<p>The hostname should be in one of these formats:</p>
+<ul>
+  <li><b>ServiceName</b>.service.consul</li>
+  <li><b>PortName</b>.<b>ServiceName</b>.service.consul</li>
+  <li><b>ServiceName</b>.service.<b>DatacenterName</b>.consul</li>
+  <li><b>PortName</b>.<b>ServiceName</b>.service.<b>DatacenterName</b>.consul</li>
+</ul>
+	`))
 }
 
 func (s *Server) printQuickLinks(res http.ResponseWriter, hostname string) {
@@ -205,6 +223,14 @@ func (s *Server) printQuickLinks(res http.ResponseWriter, hostname string) {
 	`, nomadHost, consulHost)))
 }
 
+func addHostnameSuffix(hostname string) string {
+	if len(*hostnameSuffix) == 0 {
+		return hostname
+	}
+
+	return hostname + "." + strings.TrimPrefix(*hostnameSuffix, ".")
+}
+
 // RedirectOption corresponds to a Consul service+port pair which can be redirected to
 type RedirectOption struct {
 	Hostname string
@@ -212,7 +238,7 @@ type RedirectOption struct {
 	Port     uint16
 }
 
-// BuildURL replaces the port in the given URL
+// BuildURL replaces the port in the given URL provided an original URL and hostname override
 func (r *RedirectOption) BuildURL(hostname string, origUrl *url.URL) (*url.URL, error) {
 	return buildUrlWithPort(hostname, origUrl, r.guessScheme(), r.Port)
 }
@@ -251,6 +277,7 @@ func (s *Server) queryConsulForHostname(ctx context.Context, hostname string) ([
 		return options, err
 	}
 
+	log.Printf("found %d options for hostname %s:", len(services), hostname)
 	for _, svc := range services {
 		log.Printf("%s port %d: %#v", svc.Address, svc.ServicePort, *svc)
 
