@@ -118,6 +118,8 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	result, err := s.queryConsulForHostname(context.Background(), hostname)
 	if err != nil {
 		log.Printf("error querying Consul for %s: %#v", hostname, err)
+
+		res.Header().Set("Content-Type", "text/html")
 		http.Error(res, fmt.Sprintf(`
 <p>Error querying Consul for %s: %#v</p>
 		`, hostname, err), http.StatusInternalServerError)
@@ -126,13 +128,12 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	}
 
 	if len(result) == 1 {
-		fullHostname := addHostnameSuffix(hostname)
-		u, err := result[0].BuildURL(fullHostname, req.URL)
+		u, err := result[0].BuildURL(hostname, req.URL)
 		if err != nil {
 			log.Printf("error building URL for %s: %#v", hostname, err)
 			http.Error(res, fmt.Sprintf(`
 <p>error building URL for %s: %#v</p>
-			`, fullHostname, err), http.StatusInternalServerError)
+			`, hostname, err), http.StatusInternalServerError)
 
 			return
 		}
