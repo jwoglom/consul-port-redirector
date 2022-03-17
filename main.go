@@ -100,7 +100,8 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if !strings.HasSuffix(hostname, ".service.consul") {
+	svcName, svcType := parseConsulAddress(hostname)
+	if svcName == "" {
 		log.Printf("unable to parse hostname as .service.consul address: %s", hostname)
 
 		res.Header().Set("Content-Type", "text/html")
@@ -141,9 +142,14 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 	if len(result) == 0 {
 		res.Header().Set("Content-Type", "text/html")
+		suffix := ""
+		if len(svcType) > 0 {
+			suffix = fmt.Sprintf(" and port type <code>%s</code>", svcType)
+		}
+
 		http.Error(res, fmt.Sprintf(`
-<p>No results found for hostname %s</p>
-		`, hostname), 404)
+<p>No results found for service <code>%s</code>%s</p>
+		`, svcName, suffix), 404)
 
 		s.printQuickLinks(res, hostname)
 		return
@@ -264,7 +270,8 @@ func (s *Server) queryConsulForHostname(ctx context.Context, hostname string) ([
 }
 
 func parseConsulAddress(hostname string) (svcName, svcType string) {
-	svcName = strings.TrimSuffix(hostname, ".service.consul")
+	serviceSplit := strings.SplitN(hostname, ".service.", 2)
+	svcName = serviceSplit[0]
 	svcType = ""
 
 	if strings.Contains(svcName, ".") {
