@@ -91,9 +91,10 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 			log.Printf("error building URL with %s: %#v", hostname, err)
 
 			res.Header().Set("Content-Type", "text/html")
-			http.Error(res, fmt.Sprintf(`
+			res.WriteHeader(http.StatusInternalServerError)
+			_, _ = res.Write([]byte(fmt.Sprintf(`
 	<p>Error building URL with %s: %#v</p>
-			`, hostname, err), http.StatusInternalServerError)
+			`, hostname, err)))
 			return
 		}
 
@@ -120,9 +121,10 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		log.Printf("error querying Consul for %s: %#v", hostname, err)
 
 		res.Header().Set("Content-Type", "text/html")
-		http.Error(res, fmt.Sprintf(`
+		res.WriteHeader(http.StatusInternalServerError)
+		_, _ = res.Write([]byte(fmt.Sprintf(`
 <p>Error querying Consul for %s: %#v</p>
-		`, hostname, err), http.StatusInternalServerError)
+		`, hostname, err)))
 
 		return
 	}
@@ -131,9 +133,11 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 		u, err := result[0].BuildURL(hostname, req.URL)
 		if err != nil {
 			log.Printf("error building URL for %s: %#v", hostname, err)
-			http.Error(res, fmt.Sprintf(`
+			res.Header().Set("Content-Type", "text/html")
+			res.WriteHeader(http.StatusInternalServerError)
+			_, _ = res.Write([]byte(fmt.Sprintf(`
 <p>error building URL for %s: %#v</p>
-			`, hostname, err), http.StatusInternalServerError)
+			`, hostname, err)))
 
 			return
 		}
@@ -152,9 +156,10 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	if len(result) == 0 {
 		res.Header().Set("Content-Type", "text/html")
 
-		http.Error(res, fmt.Sprintf(`
+		res.WriteHeader(http.StatusNotFound)
+		_, _ = res.Write([]byte(fmt.Sprintf(`
 <p>No results found for service <code>%s</code>%s in Consul</p>
-		`, svcName, portTypeSuffix), 404)
+		`, svcName, portTypeSuffix)))
 
 		s.printHostnameTips(res)
 		s.printQuickLinks(res, hostname)
