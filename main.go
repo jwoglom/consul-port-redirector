@@ -79,7 +79,7 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	hostname := getHostname(req)
 	log.Printf("request: %s%s", req.Host, req.URL.Path)
 
-	if *redirectToNomadUI && strings.HasSuffix(hostname, *hostnameSuffix) {
+	if *redirectToNomadUI && (strings.HasSuffix(hostname, *hostnameSuffix) || hostname == *nomadUIHostname) {
 		redirUrl, err := buildUrlWithPort(hostname, req.URL, "http", 4646)
 
 		if redirUrl.Path == "" || redirUrl.Path == "/" {
