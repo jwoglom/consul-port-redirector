@@ -307,6 +307,9 @@ func (s *Server) queryConsulForHostname(ctx context.Context, hostname string) ([
 	var options []RedirectOption
 
 	svcName, svcType := parseConsulAddress(hostname)
+	if svcName == "" && svcType == "" {
+		return options, nil
+	}
 
 	services, _, err := s.consul.Catalog().Service(svcName, svcType, &api.QueryOptions{})
 	if err != nil {
@@ -339,8 +342,13 @@ func parseConsulAddress(hostname string) (svcName, svcType string) {
 
 	if strings.Contains(svcName, ".") {
 		parts := strings.SplitN(svcName, ".", 2)
-		svcType = strings.TrimPrefix(parts[1], "_")
 		svcName = strings.TrimPrefix(parts[0], "_")
+		svcType = strings.TrimPrefix(parts[1], "_")
+	}
+
+	// don't parse IP addresses
+	if strings.Count(svcType, ".") > 0 {
+		return "", ""
 	}
 
 	return svcName, svcType
