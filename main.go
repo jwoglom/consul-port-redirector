@@ -61,6 +61,10 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
+	if len(parsedCustomRoutes) > 0 {
+		log.Printf("Found custom routes: %#v\n", parsedCustomRoutes)
+	}
+
 	return &Server{
 		consul:       client,
 		customRoutes: parsedCustomRoutes,
