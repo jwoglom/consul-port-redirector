@@ -11,10 +11,10 @@ func parsedAs(t *testing.T, inputHostname, outputName, outputType string) {
 
 func Test_parseConsulAddress(t *testing.T) {
 	parsedAs(t, "foobar.service.consul", "foobar", "")
-	parsedAs(t, "http.foobar.service.consul", "foobar", "http")
-	parsedAs(t, "rpc.foobar.service.consul", "foobar", "rpc")
+	parsedAs(t, "_foobar._http.service.consul", "foobar", "http")
+	parsedAs(t, "_foobar._rpc.service.consul", "foobar", "rpc")
 
 	parsedAs(t, "foobar.service.site.consul", "foobar", "")
-	parsedAs(t, "http.foobar.service.site.consul", "foobar", "http")
-	parsedAs(t, "rpc.foobar.service.site.consul", "foobar", "rpc")
+	parsedAs(t, "_foobar._http.service.site.consul", "foobar", "http")
+	parsedAs(t, "_foobar._rpc.service.site.consul", "foobar", "rpc")
 }

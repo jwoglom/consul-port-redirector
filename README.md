@@ -35,8 +35,9 @@ To see all ports registered in Consul for the `nomad` service:
 
 To see all ports named `http` in Consul for the `nomad` service:
 
-* http://http.nomad.service.consul
-* http://http.nomad.service.[datacenter].consul
+* http://_nomad._http.service.consul
+* http://_nomad._http.service.[datacenter].consul
 
+Note that Consul requires the leading underscore, and the service name comes before the port name.
 If only one instance matches in Consul, you will be redirected to that port.
 If multiple match, you will receive a basic list of linked host:ports.

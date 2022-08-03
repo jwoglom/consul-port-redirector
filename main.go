@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -19,6 +20,7 @@ var (
 	consulUIHostname  = flag.String("consulUIHostname", "", "the hostname to link to for viewing the Consul UI")
 	redirectToNomadUI = flag.Bool("redirectToNomadUI", false, "if true, redirects to the nomad UI when provided a hostname with hostnameSuffix")
 	hostnameSuffix    = flag.String("hostnameSuffix", "", "the hostname suffix for nodes in the cluster")
+	customRoutes      = flag.String("customRoutes", "{}", "a JSON key-value map of custom routings based on hostname")
 )
 
 func main() {
@@ -44,7 +46,8 @@ func runServer() error {
 // Server implements a http.Handler to serve HTTP requests
 // with a redirect to the correct port of the Consul service
 type Server struct {
-	consul *api.Client
+	consul       *api.Client
+	customRoutes map[string]string
 }
 
 func NewServer() (*Server, error) {
@@ -53,9 +56,25 @@ func NewServer() (*Server, error) {
 		return nil, err
 	}
 
+	parsedCustomRoutes, err := parseCustomRoutes(*customRoutes)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Server{
-		consul: client,
+		consul:       client,
+		customRoutes: parsedCustomRoutes,
 	}, nil
+}
+
+func parseCustomRoutes(raw string) (map[string]string, error) {
+	var mp map[string]string
+	if raw == "" || raw == "{}" {
+		return mp, nil
+	}
+
+	err := json.Unmarshal([]byte(raw), &mp)
+	return mp, err
 }
 
 // ServeHTTP redirects to the requested port, or provides a list of
@@ -78,6 +97,17 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 	hostname := getHostname(req)
 	log.Printf("request: %s%s", req.Host, req.URL.Path)
+
+	if redirUrl, ok := s.customRoutes[hostname]; ok {
+		http.Redirect(res, req, redirUrl, http.StatusTemporaryRedirect)
+		return
+	} else if strings.HasSuffix(hostname, fmt.Sprintf(".%s", *hostnameSuffix)) {
+		cutHostname := strings.TrimSuffix(hostname, fmt.Sprintf(".%s", *hostnameSuffix))
+		if redirUrl, ok := s.customRoutes[cutHostname]; ok {
+			http.Redirect(res, req, redirUrl, http.StatusTemporaryRedirect)
+			return
+		}
+	}
 
 	if *redirectToNomadUI && (strings.HasSuffix(hostname, *hostnameSuffix) || hostname == *nomadUIHostname) {
 		redirUrl, err := buildUrlWithPort(hostname, req.URL, "http", 4646)
@@ -309,8 +339,8 @@ func parseConsulAddress(hostname string) (svcName, svcType string) {
 
 	if strings.Contains(svcName, ".") {
 		parts := strings.SplitN(svcName, ".", 2)
-		svcType = parts[0]
-		svcName = parts[1]
+		svcType = strings.TrimPrefix(parts[1], "_")
+		svcName = strings.TrimPrefix(parts[0], "_")
 	}
 
 	return svcName, svcType
