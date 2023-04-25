@@ -233,9 +233,9 @@ func (s *Server) printHostnameTips(res http.ResponseWriter) {
 <p>The hostname should be in one of these formats:</p>
 <ul>
   <li><b>ServiceName</b>.service.consul</li>
-  <li><b>PortName</b>.<b>ServiceName</b>.service.consul</li>
+  <li><b>_ServiceName</b>.<b>_PortName</b>.service.consul</li>
   <li><b>ServiceName</b>.service.<b>DatacenterName</b>.consul</li>
-  <li><b>PortName</b>.<b>ServiceName</b>.service.<b>DatacenterName</b>.consul</li>
+  <li><b>_ServiceName</b>.<b>_PortName</b>.service.<b>DatacenterName</b>.consul</li>
 </ul>
 	`))
 }
