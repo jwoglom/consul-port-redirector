@@ -67,12 +67,13 @@ check h.local "/graph/1234" "http://grafana:2345/graph?id=1234&detail=1"
 echo kill $pid
 kill $pid 2> /dev/null
 
+
+# kill all child processes
+pkill -P $$
+
 if [[ $ERRORS == 0 ]]; then
     echo PASS
 else
     echo FAIL: $ERRORS
     exit 1
 fi
-
-# kill all child processes
-pkill -P $$
