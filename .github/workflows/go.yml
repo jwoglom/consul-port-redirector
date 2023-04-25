@@ -26,6 +26,12 @@ jobs:
 
     - name: Build darwin64
       run: GOOS=darwin GOARCH=amd64 go build -o consul-port-redirector-darwin-amd64 -v ./...
+    
+    - name: Unit test
+      run: go test main.go main_test.go
+    
+    - name: Integration test
+      run: bash ./integration_test.sh
 
     - uses: actions/upload-artifact@v3
       with:

@@ -311,12 +311,17 @@ func redirectToCustomRoute(res http.ResponseWriter, req *http.Request, hostname,
 		return err
 	}
 
+	// if custom route "/a" exists and we are at "/a/b", trim "/a" from the new url
 	if strings.Contains(hostname, "/") {
 		parts := strings.SplitAfterN(hostname, "/", 2)
 		redirUrl.Path = strings.TrimPrefix(redirUrl.Path, "/"+parts[1])
 	}
 
-	if len(parsedUrl.Path) > 1 {
+	if strings.Contains(customUrl, "$arg$") {
+		argValue := redirUrl.Path[1:]
+		redirUrl.Path = strings.ReplaceAll(parsedUrl.Path, "$arg$", argValue)
+		redirUrl.RawQuery = strings.ReplaceAll(parsedUrl.RawQuery, "$arg$", argValue)
+	} else if len(parsedUrl.Path) > 1 {
 		redirUrl.Path = parsedUrl.Path + redirUrl.Path
 	}
 
