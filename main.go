@@ -101,39 +101,11 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 
 	hostname := getHostname(req)
 	log.Printf("request: %s%s", req.Host, req.URL.Path)
-
-	// custom routes: try an exact match for "hostname/one/two"
-	if s.tryRedirectRoutePath(res, req, fmt.Sprintf("%s%s", hostname, req.URL.Path)) {
-		return
-	}
-
-	// custom routes: try a match for "hostname/one" and append "/two"
-	pathSegments := strings.Split(req.URL.Path, "/")
-	if len(pathSegments) > 2 {
-		// from "/a/b" use "a" as segment
-		hostnamePath := fmt.Sprintf("%s/%s", hostname, pathSegments[1])
-		if s.tryRedirectRoutePath(res, req, hostnamePath) {
-			return
-		}
-	}
-
-	// try exact custom route match for hostname
-	if redirUrl, ok := s.customRoutes[hostname]; ok {
-		err := redirectToCustomRoute(res, req, hostname, redirUrl)
-		if err != nil {
-			log.Printf("error processing custom route with %s: %#v", hostname, err)
-
-			res.Header().Set("Content-Type", "text/html")
-			res.WriteHeader(http.StatusInternalServerError)
-			_, _ = res.Write([]byte(fmt.Sprintf(`
-	<p>Error processing custom route with %s: %#v</p>
-			`, hostname, err)))
-		}
+	if s.tryCustomRoutesForHostname(res, req, hostname) {
 		return
 	} else if strings.HasSuffix(hostname, fmt.Sprintf(".%s", *hostnameSuffix)) {
 		cutHostname := strings.TrimSuffix(hostname, fmt.Sprintf(".%s", *hostnameSuffix))
-		if redirUrl, ok := s.customRoutes[cutHostname]; ok {
-			redirectToCustomRoute(res, req, cutHostname, redirUrl)
+		if s.tryCustomRoutesForHostname(res, req, cutHostname) {
 			return
 		}
 	}
@@ -288,6 +260,29 @@ func (s *Server) printQuickLinks(res http.ResponseWriter, hostname string) {
 	`, nomadHost, consulHost)))
 }
 
+func (s *Server) tryCustomRoutesForHostname(res http.ResponseWriter, req *http.Request, hostname string) bool {
+	// custom routes: try an exact match for "hostname/one/two"
+	if s.tryRedirectRoutePath(res, req, fmt.Sprintf("%s%s", hostname, req.URL.Path)) {
+		return true
+	}
+
+	// custom routes: try a match for "hostname/one" and append "/two"
+	pathSegments := strings.Split(req.URL.Path, "/")
+	if len(pathSegments) > 2 {
+		// from "/a/b" use "a" as segment
+		hostnamePath := fmt.Sprintf("%s/%s", hostname, pathSegments[1])
+		if s.tryRedirectRoutePath(res, req, hostnamePath) {
+			return true
+		}
+	}
+
+	// try exact custom route match for hostname
+	if s.tryRedirectRoutePath(res, req, hostname) {
+		return true
+	}
+	return false
+}
+
 func (s *Server) tryRedirectRoutePath(res http.ResponseWriter, req *http.Request, hostnamePath string) bool {
 	if redirUrl, ok := s.customRoutes[hostnamePath]; ok {
 		err := redirectToCustomRoute(res, req, hostnamePath, redirUrl)
@@ -319,6 +314,10 @@ func redirectToCustomRoute(res http.ResponseWriter, req *http.Request, hostname,
 	if strings.Contains(hostname, "/") {
 		parts := strings.SplitAfterN(hostname, "/", 2)
 		redirUrl.Path = strings.TrimPrefix(redirUrl.Path, "/"+parts[1])
+	}
+
+	if len(parsedUrl.Path) > 1 {
+		redirUrl.Path = parsedUrl.Path + redirUrl.Path
 	}
 
 	http.Redirect(res, req, redirUrl.String(), http.StatusTemporaryRedirect)
