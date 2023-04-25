@@ -102,8 +102,24 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	hostname := getHostname(req)
 	log.Printf("request: %s%s", req.Host, req.URL.Path)
 
+	// custom routes: try an exact match for "hostname/one/two"
+	if s.tryRedirectRoutePath(res, req, fmt.Sprintf("%s%s", hostname, req.URL.Path)) {
+		return
+	}
+
+	// custom routes: try a match for "hostname/one" and append "/two"
+	pathSegments := strings.Split(req.URL.Path, "/")
+	if len(pathSegments) > 2 {
+		// from "/a/b" use "a" as segment
+		hostnamePath := fmt.Sprintf("%s/%s", hostname, pathSegments[1])
+		if s.tryRedirectRoutePath(res, req, hostnamePath) {
+			return
+		}
+	}
+
+	// try exact custom route match for hostname
 	if redirUrl, ok := s.customRoutes[hostname]; ok {
-		err := redirectToCustomRoute(res, req, redirUrl)
+		err := redirectToCustomRoute(res, req, hostname, redirUrl)
 		if err != nil {
 			log.Printf("error processing custom route with %s: %#v", hostname, err)
 
@@ -117,7 +133,7 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	} else if strings.HasSuffix(hostname, fmt.Sprintf(".%s", *hostnameSuffix)) {
 		cutHostname := strings.TrimSuffix(hostname, fmt.Sprintf(".%s", *hostnameSuffix))
 		if redirUrl, ok := s.customRoutes[cutHostname]; ok {
-			redirectToCustomRoute(res, req, redirUrl)
+			redirectToCustomRoute(res, req, cutHostname, redirUrl)
 			return
 		}
 	}
@@ -272,7 +288,24 @@ func (s *Server) printQuickLinks(res http.ResponseWriter, hostname string) {
 	`, nomadHost, consulHost)))
 }
 
-func redirectToCustomRoute(res http.ResponseWriter, req *http.Request, customUrl string) error {
+func (s *Server) tryRedirectRoutePath(res http.ResponseWriter, req *http.Request, hostnamePath string) bool {
+	if redirUrl, ok := s.customRoutes[hostnamePath]; ok {
+		err := redirectToCustomRoute(res, req, hostnamePath, redirUrl)
+		if err != nil {
+			log.Printf("error processing custom route with %s: %#v", hostnamePath, err)
+
+			res.Header().Set("Content-Type", "text/html")
+			res.WriteHeader(http.StatusInternalServerError)
+			_, _ = res.Write([]byte(fmt.Sprintf(`
+	<p>Error processing custom route with %s: %#v</p>
+			`, hostnamePath, err)))
+		}
+		return true
+	}
+	return false
+}
+
+func redirectToCustomRoute(res http.ResponseWriter, req *http.Request, hostname, customUrl string) error {
 	parsedUrl, err := url.Parse(customUrl)
 	if err != nil {
 		return err
@@ -281,6 +314,11 @@ func redirectToCustomRoute(res http.ResponseWriter, req *http.Request, customUrl
 	redirUrl, err := buildUrlWithPort(parsedUrl.Host, req.URL, parsedUrl.Scheme, 0)
 	if err != nil {
 		return err
+	}
+
+	if strings.Contains(hostname, "/") {
+		parts := strings.SplitAfterN(hostname, "/", 2)
+		redirUrl.Path = strings.TrimPrefix(redirUrl.Path, "/"+parts[1])
 	}
 
 	http.Redirect(res, req, redirUrl.String(), http.StatusTemporaryRedirect)
