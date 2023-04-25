@@ -103,12 +103,21 @@ func (s *Server) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 	log.Printf("request: %s%s", req.Host, req.URL.Path)
 
 	if redirUrl, ok := s.customRoutes[hostname]; ok {
-		http.Redirect(res, req, redirUrl, http.StatusTemporaryRedirect)
+		err := redirectToCustomRoute(res, req, redirUrl)
+		if err != nil {
+			log.Printf("error processing custom route with %s: %#v", hostname, err)
+
+			res.Header().Set("Content-Type", "text/html")
+			res.WriteHeader(http.StatusInternalServerError)
+			_, _ = res.Write([]byte(fmt.Sprintf(`
+	<p>Error processing custom route with %s: %#v</p>
+			`, hostname, err)))
+		}
 		return
 	} else if strings.HasSuffix(hostname, fmt.Sprintf(".%s", *hostnameSuffix)) {
 		cutHostname := strings.TrimSuffix(hostname, fmt.Sprintf(".%s", *hostnameSuffix))
 		if redirUrl, ok := s.customRoutes[cutHostname]; ok {
-			http.Redirect(res, req, redirUrl, http.StatusTemporaryRedirect)
+			redirectToCustomRoute(res, req, redirUrl)
 			return
 		}
 	}
@@ -263,6 +272,21 @@ func (s *Server) printQuickLinks(res http.ResponseWriter, hostname string) {
 	`, nomadHost, consulHost)))
 }
 
+func redirectToCustomRoute(res http.ResponseWriter, req *http.Request, customUrl string) error {
+	parsedUrl, err := url.Parse(customUrl)
+	if err != nil {
+		return err
+	}
+
+	redirUrl, err := buildUrlWithPort(parsedUrl.Host, req.URL, parsedUrl.Scheme, 0)
+	if err != nil {
+		return err
+	}
+
+	http.Redirect(res, req, redirUrl.String(), http.StatusTemporaryRedirect)
+	return nil
+}
+
 func addHostnameSuffix(hostname string) string {
 	if len(*hostnameSuffix) == 0 {
 		return hostname
@@ -290,7 +314,11 @@ func buildUrlWithPort(hostname string, origUrl *url.URL, scheme string, port uin
 	}
 
 	u.Scheme = scheme
-	u.Host = fmt.Sprintf("%s:%d", hostname, port)
+	if port != 0 {
+		u.Host = fmt.Sprintf("%s:%d", hostname, port)
+	} else {
+		u.Host = hostname
+	}
 
 	return u, nil
 }
