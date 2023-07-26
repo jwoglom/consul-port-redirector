@@ -285,6 +285,7 @@ func (s *Server) tryCustomRoutesForHostname(res http.ResponseWriter, req *http.R
 
 func (s *Server) tryRedirectRoutePath(res http.ResponseWriter, req *http.Request, hostnamePath string) bool {
 	if redirUrl, ok := s.customRoutes[hostnamePath]; ok {
+		log.Printf("using custom route for %s: %s", hostnamePath, redirUrl)
 		err := redirectToCustomRoute(res, req, hostnamePath, redirUrl)
 		if err != nil {
 			log.Printf("error processing custom route with %s: %#v", hostnamePath, err)
@@ -317,6 +318,17 @@ func redirectToCustomRoute(res http.ResponseWriter, req *http.Request, hostname,
 		redirUrl.Path = strings.TrimPrefix(redirUrl.Path, "/"+parts[1])
 	}
 
+	// if custom route has a query string
+	if len(parsedUrl.RawQuery) > 0 {
+		if len(req.URL.RawQuery) == 0 {
+			// then use the route's query when the provided request has none
+			redirUrl.RawQuery = parsedUrl.RawQuery
+		} else {
+			// otherwise append it following an '&'
+			redirUrl.RawQuery = parsedUrl.RawQuery + "&" + redirUrl.RawQuery
+		}
+	}
+
 	if strings.Contains(customUrl, "$arg$") {
 		argValue := redirUrl.Path[1:]
 		redirUrl.Path = strings.ReplaceAll(parsedUrl.Path, "$arg$", argValue)
@@ -325,6 +337,7 @@ func redirectToCustomRoute(res http.ResponseWriter, req *http.Request, hostname,
 		redirUrl.Path = parsedUrl.Path + redirUrl.Path
 	}
 
+	log.Printf("redirecting to custom route %s", redirUrl.String())
 	http.Redirect(res, req, redirUrl.String(), http.StatusTemporaryRedirect)
 	return nil
 }

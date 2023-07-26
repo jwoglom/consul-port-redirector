@@ -32,7 +32,8 @@ go build main.go
         "h":"http://home:1234",
         "h/grafana":"http://grafana:2345/graphs/index",
         "h/grafana/overview":"http://grafana:2345/graphs/12345",
-        "h/graph":"http://grafana:2345/graph?id=$arg$&detail=1"
+        "h/graph":"http://grafana:2345/graph?id=$arg$&detail=1",
+        "h/topgraph":"http://grafana:2345/graph?id=1234&detail=1"
     }' --hostnameSuffix=local &
 pid=$!
 
@@ -63,6 +64,12 @@ check h.local "/grafana/overview?key=val" "http://grafana:2345/graphs/12345?key=
 
 check h "/graph/1234" "http://grafana:2345/graph?id=1234&detail=1"
 check h.local "/graph/1234" "http://grafana:2345/graph?id=1234&detail=1"
+
+check h "/topgraph" "http://grafana:2345/graph?id=1234&detail=1"
+check h.local "/topgraph" "http://grafana:2345/graph?id=1234&detail=1"
+
+check h "/topgraph?range=4h" "http://grafana:2345/graph?id=1234&detail=1&range=4h"
+check h.local "/topgraph?range=4h" "http://grafana:2345/graph?id=1234&detail=1&range=4h"
 
 echo kill $pid
 kill $pid 2> /dev/null
