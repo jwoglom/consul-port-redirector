@@ -38,9 +38,17 @@ func runServer() error {
 		return err
 	}
 
-	http.Handle("/", s)
+	handler := &Handler{s}
 	log.Printf("listening on port :%d", *port)
-	return http.ListenAndServe(fmt.Sprintf(":%d", *port), nil)
+	return http.ListenAndServe(fmt.Sprintf(":%d", *port), handler)
+}
+
+type Handler struct {
+	s *Server
+}
+
+func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.s.ServeHTTP(w, r)
 }
 
 // Server implements a http.Handler to serve HTTP requests

@@ -8,7 +8,7 @@ redir_url() {
 }
 
 check() {
-    actual=$(redir_url -H "Host: $1" "http://localhost:$PORT/$2")
+    actual=$(redir_url -H "Host: $1" "http://localhost:${PORT}$2")
     expected=$3
     if [[ "$actual" == "$expected" ]]; then
         echo "OK: $actual == $expected"
@@ -80,6 +80,7 @@ check h "/open/abc/def" "http://open:1234/open/abc/def"
 check h "/play" "http://play:1234/play?v="
 check h "/play/abcde123" "http://play:1234/play?v=abcde123"
 check h "/play/abc/def" "http://play:1234/play?v=abc/def"
+check h "/play/http://google.com" "http://play:1234/play?v=http://google.com"
 
 echo kill $pid
 kill $pid 2> /dev/null
