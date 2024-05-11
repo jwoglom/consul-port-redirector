@@ -268,7 +268,7 @@ func (s *Server) tryCustomRoutesForHostname(res http.ResponseWriter, req *http.R
 
 	// custom routes: try a match for "hostname/one" and append "/two"
 	pathSegments := strings.Split(req.URL.Path, "/")
-	if len(pathSegments) > 2 {
+	if len(pathSegments) >= 2 {
 		// from "/a/b" use "a" as segment
 		hostnamePath := fmt.Sprintf("%s/%s", hostname, pathSegments[1])
 		if s.tryRedirectRoutePath(res, req, hostnamePath) {
@@ -330,7 +330,10 @@ func redirectToCustomRoute(res http.ResponseWriter, req *http.Request, hostname,
 	}
 
 	if strings.Contains(customUrl, "$arg$") {
-		argValue := redirUrl.Path[1:]
+		argValue := ""
+		if len(redirUrl.Path) > 0 {
+			argValue = redirUrl.Path[1:]
+		}
 		redirUrl.Path = strings.ReplaceAll(parsedUrl.Path, "$arg$", argValue)
 		redirUrl.RawQuery = strings.ReplaceAll(parsedUrl.RawQuery, "$arg$", argValue)
 	} else if len(parsedUrl.Path) > 1 {

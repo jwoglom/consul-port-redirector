@@ -33,7 +33,9 @@ go build main.go
         "h/grafana":"http://grafana:2345/graphs/index",
         "h/grafana/overview":"http://grafana:2345/graphs/12345",
         "h/graph":"http://grafana:2345/graph?id=$arg$&detail=1",
-        "h/topgraph":"http://grafana:2345/graph?id=1234&detail=1"
+        "h/topgraph":"http://grafana:2345/graph?id=1234&detail=1",
+        "h/open":"http://open:1234/open/$arg$",
+        "h/play":"http://play:1234/play?v=$arg$"
     }' --hostnameSuffix=local &
 pid=$!
 
@@ -70,6 +72,14 @@ check h.local "/topgraph" "http://grafana:2345/graph?id=1234&detail=1"
 
 check h "/topgraph?range=4h" "http://grafana:2345/graph?id=1234&detail=1&range=4h"
 check h.local "/topgraph?range=4h" "http://grafana:2345/graph?id=1234&detail=1&range=4h"
+
+check h "/open" "http://open:1234/open/"
+check h "/open/abcde123" "http://open:1234/open/abcde123"
+check h "/open/abc/def" "http://open:1234/open/abc/def"
+
+check h "/play" "http://play:1234/play?v="
+check h "/play/abcde123" "http://play:1234/play?v=abcde123"
+check h "/play/abc/def" "http://play:1234/play?v=abc/def"
 
 echo kill $pid
 kill $pid 2> /dev/null
